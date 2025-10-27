@@ -1,6 +1,9 @@
 general:
   kafka-topic: transaction-topic
 
+server:
+  port: 33400
+
 incentive:
   api:
     url: http://localhost:8080/incentive
