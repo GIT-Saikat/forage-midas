@@ -2,6 +2,7 @@ package com.jpmc.midascore.component;
 
 import com.jpmc.midascore.entity.TransactionRecord;
 import com.jpmc.midascore.entity.UserRecord;
+import com.jpmc.midascore.foundation.Incentive;
 import com.jpmc.midascore.foundation.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,9 +14,11 @@ public class TransactionListener {
     
     private static final Logger logger = LoggerFactory.getLogger(TransactionListener.class);
     private final DatabaseConduit databaseConduit;
+    private final IncentiveService incentiveService;
 
-    public TransactionListener(DatabaseConduit databaseConduit) {
+    public TransactionListener(DatabaseConduit databaseConduit, IncentiveService incentiveService) {
         this.databaseConduit = databaseConduit;
+        this.incentiveService = incentiveService;
     }
 
     @KafkaListener(topics = "${general.kafka-topic}", groupId = "midas-core-group")
@@ -52,18 +55,30 @@ public class TransactionListener {
             return false;
         }
 
-        // All validations passed - process the transaction
+        // All validations passed - get incentive from API
+        float incentiveAmount = 0;
         try {
-            // Update sender balance
+            Incentive incentive = incentiveService.getIncentive(transaction);
+            if (incentive != null) {
+                incentiveAmount = incentive.getAmount();
+                logger.info("Received incentive {} for transaction: {}", incentiveAmount, transaction);
+            }
+        } catch (Exception e) {
+            logger.error("Error calling incentive API, proceeding with 0 incentive: {}", transaction, e);
+        }
+
+        // Process the transaction
+        try {
+            // Update sender balance (deduct transaction amount only)
             float newSenderBalance = sender.getBalance() - transaction.getAmount();
             databaseConduit.updateUserBalance(sender, newSenderBalance);
 
-            // Update recipient balance
-            float newRecipientBalance = recipient.getBalance() + transaction.getAmount();
+            // Update recipient balance (add transaction amount + incentive)
+            float newRecipientBalance = recipient.getBalance() + transaction.getAmount() + incentiveAmount;
             databaseConduit.updateUserBalance(recipient, newRecipientBalance);
 
-            // Record the transaction
-            TransactionRecord transactionRecord = new TransactionRecord(sender, recipient, transaction.getAmount());
+            // Record the transaction with incentive
+            TransactionRecord transactionRecord = new TransactionRecord(sender, recipient, transaction.getAmount(), incentiveAmount);
             databaseConduit.saveTransaction(transactionRecord);
 
             return true;

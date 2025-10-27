@@ -1,6 +1,10 @@
 general:
   kafka-topic: transaction-topic
 
+incentive:
+  api:
+    url: http://localhost:8080/incentive
+
 spring:
   datasource:
     url: jdbc:h2:mem:testdb
